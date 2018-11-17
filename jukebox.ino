@@ -9,6 +9,7 @@
   Sound is: 000.mp3, where 000 is replaced with the pin number, e.g. A0 = 000.mp3, A10 = 010.mp3
 
   Code based on adafruit example
+  License: GNU GENERAL PUBLIC LICENSE Version 3
 */
 
 #define MP 1 // 0 for disable musicplayer
