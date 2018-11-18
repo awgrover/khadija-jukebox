@@ -1,3 +1,4 @@
+
 /* Install
   install the "Adafruit VS1053 Library by adafruit"
 
@@ -10,6 +11,10 @@
 
   Code based on adafruit example
   License: GNU GENERAL PUBLIC LICENSE Version 3
+
+  Behavior:
+    When pin A0 goes low, play "000.mp3", a1->001.mp3, etc.
+    When pin goes high, stop playing.
 */
 
 #define MP 1 // 0 for disable musicplayer
@@ -41,20 +46,81 @@
 Adafruit_VS1053_FilePlayer musicPlayer = 
   Adafruit_VS1053_FilePlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
  
-
-const int Buttons[] = { A0, A1, A2, A3, A4, A5, -1 }; // PINS: on LOW, play 00n.ogg. END LIST WITH -1. Assume consecutive
 char track[] = "000.mp3";  // hardcoded assumption below
+
+static const int buttons[] = { A0, A1, A2, A3, A4, A5, A6, -1 }; // PINS: on LOW, play 00n.ogg. END LIST WITH -1. Assume consecutive
+
+class ButtonState {
+  private:
+
+    int last;
+    unsigned long changed_at;
+
+  public:
+  int current; // which pin
+
+  ButtonState() : current(-1), last(-1), changed_at(0) {} 
+
+  void setup() {
+    Serial.print("A0 is pin int ");Serial.println(A0);
+    for (int *pin=buttons; *pin != -1; pin++ ) {
+      pinMode( *pin, INPUT_PULLUP );
+      Serial.print("  pin ");Serial.print(*pin);Serial.print(" as ");Serial.println(*pin - A0);
+    }
+  }
+
+  boolean is_changed() {
+    // returns true if the state has changed: new-button-closed, changed to all open
+    // set -1 for all open
+    // set i for the first closed button
+    // debounces
+
+    // debounce
+    if (millis() - changed_at < 50) {
+      return false; // no changes
+      }
+
+    //Serial.println("Check...");
+    for (int *pin = buttons; *pin != -1; pin++ ) {
+      //Serial.print(" ");Serial.print(*pin);
+      if (! digitalRead( *pin ) ) { // is this button "closed"?
+        if (*pin != last) {
+          this->current = this->last = *pin;
+          this->changed_at = millis();
+          //Serial.print(" CHG");
+          return true;
+        } else {
+          // no change, still button
+          return false;
+          }
+      }
+    }
+    //Serial.print(" NONE");
+
+    // none are closed
+    if (-1 != last) {
+      // changed
+      this->current = this->last = -1;
+      this->changed_at = millis();
+      //Serial.print(" CHG");
+      return true;
+      }
+    else {
+      // no change
+      return false;
+      }
+  }
+
+}; 
+
+ButtonState panel_buttons;
 
 void setup() {
   Serial.begin(9600);
   Serial.println("Setup");
 
-  Serial.print("A0 ");Serial.println(A0);
-  for (int *pin=Buttons; *pin != -1; pin++ ) {
-    pinMode( *pin, INPUT_PULLUP );
-    Serial.print("Using ");Serial.print(*pin);Serial.print(" as ");Serial.println(*pin - A0);
-  }
-  Serial.print("Pins setup ");Serial.println((int)Buttons);
+  panel_buttons.setup();
+  Serial.println("Pins setup");
 
   if (MP && ! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
@@ -82,52 +148,28 @@ void setup() {
  }
 
 void loop() {
-  
-  int current_button = which_button( Buttons );
-  if (current_button != -1) {
+  if ( panel_buttons.is_changed() ) {
+    // changed to all-off, or changed to new-on: stop
+    //Serial.println(); Serial.print("saw chg, current=");Serial.println(panel_buttons.current);
+    Serial.println("Stop");
     IFMP musicPlayer.stopPlaying();
 
-    current_button = current_button - A0; // Use A0 as 0, A1 as 1,...
+    // new-on? play...
+    if ( panel_buttons.current > 0 ) {
 
-    // Fixup file name
-    // first digit is 0
-    // second digit is tens
-    if (current_button / 10) track[1] = '0' + (current_button / 10); 
-    // third digit is ones
-    track[2] = '0' + (current_button % 10);
-    Serial.print("Play ");Serial.println(track);
-    IFMP musicPlayer.startPlayingFile("track002.mp3");
+      int n = panel_buttons.current - A0; // Use A0 as 0, A1 as 1,...
+
+      // Fixup file name
+      // first digit is 0
+      // second digit is tens
+      track[1] = '0' + ((n % 100) / 10); 
+      // third digit is ones
+      track[2] = '0' + (n % 10);
+
+      Serial.print("Play ");Serial.println(track);
+      IFMP musicPlayer.startPlayingFile(track);
     }
   }
-
-int which_button( int *pinlist ) {
-  // returns -1 if no change
-  // debounces
-  static int last_button = -1;
-  static unsigned long last_detect = 0;
-
-  // debounce
-  if (millis() - last_detect < 1050) {
-    return -1;
-    }
-
-  // Serial.print("Pins at ");Serial.println((int)pinlist);
-
-  for (int *pin = pinlist; *pin != -1; pin++ ) {
-    // Serial.print(" ");Serial.print(*pin);
-    if (! digitalRead( *pin ) ) {
-      // Serial.print("Down ");Serial.println(*pin);
-      // only counts if diff
-      if ( last_button != *pin ) {
-        Serial.print("Changed from ");Serial.print(last_button);Serial.print(" to ");Serial.println(*pin);
-        last_button = *pin;
-        last_detect =  millis();
-        return *pin;
-        }
-    }
-  }
-
-  return -1; // nothing changed
 }
 
 void printDirectory(File dir, int numTabs) {
@@ -145,7 +187,7 @@ void printDirectory(File dir, int numTabs) {
      Serial.print(entry.name());
      if (entry.isDirectory()) {
        Serial.println("/");
-       printDirectory(entry, numTabs+1);
+       //printDirectory(entry, numTabs+1);
      } else {
        // files have sizes, directories do not
        Serial.print("\t\t");
